@@ -1,0 +1,23 @@
+{
+  "name": "twitch-gpm",
+  "version": "0.0.0",
+  "description": "Twitch bot that controls Google Play Music Desktop Player",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/brpeterman/twitch-gpm.git"
+  },
+  "author": "Brandon Peterman",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/brpeterman/twitch-gpm/issues"
+  },
+  "dependencies": {
+    "readline": "^1.3.0",
+    "tmi.js": "~1.1.1",
+    "ws": "^1.1.1"
+  }
+}
