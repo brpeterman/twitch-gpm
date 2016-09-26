@@ -1,5 +1,6 @@
 var tmi = require('tmi.js');
 var ws = require('ws');
+var readline = require('readline-sync');
 var config = require('./config.js');
 
 var nextRequest = 1;
@@ -38,21 +39,53 @@ var ws_client = new ws(config.gpm.uri);
 
 // Assume control of the music player
 ws_client.on('open', function() {
+    sendControlRequest('');
+    tmi_client.connect(tmi_options);
+});
+
+function sendControlRequest(code) {
+    var token = code;
+    if (token === '' && config.gpm.token) {
+        token = config.gpm.token;
+    }
+
+    var app_auth = ['twitch-gpm'];
+    if (token !== '') {
+        app_auth[1] = token;
+    }
+
     var control_request = {
         namespace: 'connect',
         method: 'connect',
-        arguments: ['twitch-gpm', config.gpm.token]
+        arguments: app_auth
     };
+
     ws_client.send(JSON.stringify(control_request));
-    tmi_client.connect(tmi_options);
-});
+}
+
+function promptAuthCode() {
+    return readline.question('Input 4-digit code from GPM: ');
+}
 
 // Handle music player events
 ws_client.on('message', function(data, flags) {
     var message = JSON.parse(data);
-    
+
     if (message.namespace === 'result') {
         handleResponse(message.requestID, message.value);
+    }
+        
+    else if (message.channel === 'connect') {
+        var code = '';
+        if (message.payload === 'CODE_REQUIRED') {
+            code = promptAuthCode();
+        }
+        else if (message.payload) {
+            config.gpm.token = message.payload;
+            console.log('Your token is ' + config.gpm.token);
+            console.log('Save this value to config.gpm.token');
+        }
+        sendControlRequest(code);
     }
 });
 
@@ -105,6 +138,8 @@ function handleResponse(requestID, returnValue) {
     if (!request) return;
 
     delete requests[requestID];
+
+    console.log('Response: ' + JSON.stringify(returnValue));
     
     switch(request.type) {
     case 'search':
@@ -150,7 +185,15 @@ function handleSearchResults(request, results) {
     // Report action to user
     tmi_client.say(request.channel, request.user['display-name'] + ', added ' + track.title + ' by ' + track.artist + '.');
 
-    // Add track to queue (doesn't exist yet...)
+    // Add track to queue
+     var newRequest = createRequest(request.channel, request.user, 'queue');
+    var data = {
+        namespace: 'search',
+        method: 'queueTrackResult',
+        arguments: [track],
+        requestID: newRequest.ID
+    };
+    ws_client.send(JSON.stringify(data));
 }
 
 function displayHelp(channel, user, args) {
