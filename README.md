@@ -22,7 +22,9 @@ config.twitch.channels = ['MyChannel']; // Channels to join
 module.exports = config;
 ```
 
-Unfortunately, this application is not able to request a token from Google Play Music Desktop Player. You'll have to handle that yourself. The application name is `twitch-gpm`.
+Initially, you won't have a GPMDP token. The first time you start the bot, it will ask GPMDP for authorization. GPMDP will show a four-digit code on screen; enter this code into the bot's console when prompted. The bot will then output a token (it will look like a random string of characters); save this value to `config.gpm.token`.
+
+You can get your Twitch OAuth token here (make sure to log in as your bot): http://www.twitchapps.com/tmi/
 
 ## Twitch commands
 
