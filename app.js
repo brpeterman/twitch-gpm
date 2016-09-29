@@ -17,6 +17,8 @@ var commands = {
     }
 };
 
+var queue = [];
+
 // Twitch connection config
 var tmi_options = {
     options: {
@@ -41,6 +43,10 @@ var ws_client = new ws(config.gpm.uri);
 ws_client.on('open', function() {
     sendControlRequest('');
     tmi_client.connect(tmi_options);
+});
+
+ws_client.on('close', function() {
+    tmi_client.disconnect();
 });
 
 function sendControlRequest(code) {
@@ -74,7 +80,7 @@ ws_client.on('message', function(data, flags) {
     if (message.namespace === 'result') {
         handleResponse(message.requestID, message.value);
     }
-        
+    
     else if (message.channel === 'connect') {
         var code = '';
         if (message.payload === 'CODE_REQUIRED') {
@@ -86,6 +92,9 @@ ws_client.on('message', function(data, flags) {
             console.log('Save this value to config.gpm.token');
         }
         sendControlRequest(code);
+    }
+    else if (message.channel === 'track') {
+        handleTrackChange(message.payload);
     }
 });
 
@@ -108,9 +117,9 @@ tmi_client.on('chat', (channel, user, message, self) => {
 });
 
 // User requests a song. Send the text as search text.
-function requestSong(channel, user, args) {
+function requestSong(channel, user, args, addNext) {
     var searchText = args.join(' ');
-    var request = createRequest(channel, user, 'search');
+    var request = createRequest(channel, user, 'search', addNext);
     var data = {
         namespace: 'search',
         method: 'performSearch',
@@ -121,12 +130,13 @@ function requestSong(channel, user, args) {
 }
 
 // Create a request object to hold onto and later match up to a response
-function createRequest(channel, user, type) {
+function createRequest(channel, user, type, addNext) {
     var request = {
         ID: nextRequest,
         type: type,
         channel: channel,
-        user: user
+        user: user,
+        addNext: addNext
     };
     requests[nextRequest++] = request;
     return request;
@@ -139,8 +149,6 @@ function handleResponse(requestID, returnValue) {
 
     delete requests[requestID];
 
-    console.log('Response: ' + JSON.stringify(returnValue));
-    
     switch(request.type) {
     case 'search':
         handleSearch(request);
@@ -153,7 +161,7 @@ function handleResponse(requestID, returnValue) {
 }
 
 function handleSearch(request) {
-    var newRequest = createRequest(request.channel, request.user, 'searchResults');
+    var newRequest = createRequest(request.channel, request.user, 'searchResults', request.addNext);
     var data = {
         namespace: 'search',
         method: 'getCurrentResults',
@@ -179,21 +187,44 @@ function handleSearchResults(request, results) {
     }
 
     if (!track) {
-        tmi_client.say(request.channel, request.user['display-name'] + ', failed to find a match.');
+        if (request.channel && request.user) {
+            tmi_client.say(request.channel, request.user['display-name'] + ', failed to find a match.');
+        }
+        return;
     }
 
     // Report action to user
-    tmi_client.say(request.channel, request.user['display-name'] + ', added ' + track.title + ' by ' + track.artist + '.');
+    if (request.channel && request.user) {
+        tmi_client.say(request.channel, request.user['display-name'] + ', added ' + track.title + ' by ' + track.artist + '.');
+    }
 
-    // Add track to queue
-     var newRequest = createRequest(request.channel, request.user, 'queue');
+    // If we have tracks queued already, defer adding this one until later.
+    if (!request.addNext) {
+        addToQueue(track.title, track.artist);
+    }
+    if (queue.length === 1 || request.addNext) {
+        // Add track to queue
+        playNext(request, track);
+    }
+}
+
+function playNext(request, track) {
+    var newRequest = createRequest(request.channel, request.user, 'queue');
     var data = {
         namespace: 'search',
-        method: 'queueTrackResult',
+        method: 'playTrackNext',
         arguments: [track],
         requestID: newRequest.ID
     };
     ws_client.send(JSON.stringify(data));
+}
+
+function addToQueue(title, artist) {
+    queue.push({
+        title: title,
+        artist: artist
+    });
+    console.log('Queued: ' + title + ' by ' + artist);
 }
 
 function displayHelp(channel, user, args) {
@@ -203,4 +234,22 @@ function displayHelp(channel, user, args) {
     }
     helpString = helpString.slice(0, -2);
     tmi_client.say(channel, 'Commands: ' + helpString);
+}
+
+function handleTrackChange(data) {
+    // When the track changes, we should queue up the next requested song.
+    // To do that, we have to re-run the search and add the song.
+    if (queue.length === 0) {
+        // do nothing
+        return;
+    }
+
+    var nextTrack = queue.shift();
+
+    if (data.title.toLowerCase() === nextTrack.title.toLowerCase() &&
+        data.artist.toLowerCase() === nextTrack.artist.toLowerCase()) {
+        // do nothing
+        nextTrack = queue.shift();
+    }
+    requestSong(null, null, [nextTrack.title, nextTrack.artist], true);
 }
