@@ -22,12 +22,17 @@ config.twitch.channels = ['MyChannel']; // Channels to join
 module.exports = config;
 ```
 
-Initially, you won't have a GPMDP token. The first time you start the bot, it will ask GPMDP for authorization. GPMDP will show a four-digit code on screen; enter this code into the bot's console when prompted. The bot will then output a token (it will look like a random string of characters); save this value to `config.gpm.token`.
+To get your GPMDP token:
+* Start up the bot with everything configured except for the token.
+* GPMDP will show a four-digit code on screen. Enter this code into the bot's console when prompted.
+* The bot will output a token (it will look like a random string of characters). Save this value to `config.gpm.token`.
 
-You can get your Twitch OAuth token here (make sure to log in as your bot): http://www.twitchapps.com/tmi/
+To get a Twitch OAuth token:
+* http://www.twitchapps.com/tmi/
 
 ## Twitch commands
 
 * !help - Display commands
 * !song - Search for a song to play and queue it up
+* !next - Display the next song in the request queue
 
