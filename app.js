@@ -174,13 +174,15 @@ class TwitchGPM {
       const waitForResponse = setInterval(() => {
         if ((new Date()).getTime() - request.initiated > timeout) {
           clearInterval(waitForResponse);
+          this._removeRequest(request);
           reject(new Error('Timeout'));
         }
 
         if (request.response !== null) {
           clearInterval(waitForResponse);
+          this._removeRequest(request);
           if (request.response instanceof Error) {
-            reject(request);
+            reject(request.response);
           }
           else {
             resolve(request);
@@ -188,6 +190,10 @@ class TwitchGPM {
         }
       }, 100);
     });
+  }
+
+  _removeRequest(request) {
+    delete this._requests[request.ID];
   }
 
   _createRequest(requestSource) {
