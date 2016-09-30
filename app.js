@@ -1,255 +1,307 @@
-var tmi = require('tmi.js');
-var ws = require('ws');
-var readline = require('readline-sync');
-var config = require('./config.js');
+"use strict";
 
-var nextRequest = 1;
-var requests = [];
+const tmi = require('tmi.js');
+const ws = require('ws');
+const readline = require('readline-sync');
+const Promise = require('bluebird');
+const config = require('./config.js');
 
-var commands = {
-    'song': {
-        description: 'Play song',
-        handler: requestSong
-    },
-    'help': {
-        description: 'Help',
-        handler: displayHelp
-    }
-};
+Promise.longStackTraces();
 
-var queue = [];
-
-// Twitch connection config
-var tmi_options = {
-    options: {
+class TwitchGPM {
+  constructor() {
+    const tmi_options = {
+      options: {
         debug: true
-    },
-    connection: {
+      },
+      connection: {
         cluster: 'aws',
         reconnect: true
-    },
-    identity: {
+      },
+      identity: {
         username: config.twitch.username,
         password: config.twitch.token
-    },
-    channels: config.twitch.channels
-};
+      },
+      channels: config.twitch.channels
+    };
 
-// Clients
-var tmi_client = new tmi.client(tmi_options);
-var ws_client = new ws(config.gpm.uri);
+    this._tmiClient = new tmi.client(tmi_options);
+    this._gpmClient = new ws(config.gpm.uri);
 
-// Assume control of the music player
-ws_client.on('open', function() {
-    sendControlRequest('');
-    tmi_client.connect(tmi_options);
-});
+    this._registerCommands();
+    this._setupQueue();
+    this._setupGPMHandlers();
+    this._setupTMIHandlers();
 
-ws_client.on('close', function() {
-    tmi_client.disconnect();
-});
+    this._requests = [];
+    this._nextRequest = 1;
+  }
 
-function sendControlRequest(code) {
-    var token = code;
+  _registerCommands() {
+    this.commands = {
+      'song': {
+        description: 'Play song',
+        handler: this._requestSong
+      },
+      'help': {
+        description: 'Help',
+        handler: this._displayHelp
+      },
+      'next': {
+        description: 'Show next track in queue',
+        handler: this._displayNext
+      }
+    };
+  }
+
+  _setupQueue() {
+    this._queue = [];
+  }
+
+  _setupGPMHandlers() {
+    this._gpmClient.on('open', () => {
+      this._sendControlRequest('');
+      this._tmiClient.connect();
+    });
+
+    this._gpmClient.on('close', () => this._tmiClient.disconnect());
+
+    this._gpmClient.on('message', (data, flags) => {
+      const message = JSON.parse(data);
+      this._handleWSMessage(message);
+    });
+  }
+
+  _setupTMIHandlers() {
+    this._tmiClient.on('chat', (channel, user, message, self) => {
+      this._handleChat(channel, user, message, self);
+    });
+  }
+
+  _handleChat(channel, user, message, self) {
+    if (message.slice(0,1) !== '!') return;
+
+    message = message.slice(1);
+    const msg_tokens = message.split(' ');
+    if (msg_tokens.length === 0) return;
+
+    const command = msg_tokens[0].toLowerCase();
+    const args = msg_tokens.slice(1);
+
+    const action = this.commands[command];
+    if (action) {
+        const handler = action.handler;
+        handler.call(this, channel, user, args);
+    }
+  }
+
+  _handleWSMessage(message) {
+    switch(message.channel) {
+    case 'connect':
+      console.log("Using _handleWSMessage");
+      var code = '';
+      if (message.payload === 'CODE_REQUIRED') {
+        code = this._promptAuthCode();
+      }
+      else if (message.payload) {
+        config.gpm.token = message.payload;
+        console.log('Your token is ' + config.gpm.token);
+        console.log('Save this value to config.gpm.token');
+      }
+      this._sendControlRequest(code);
+      break;
+
+    case 'track':
+      this._handleTrackChange(message.payload);
+      break;
+
+    default:
+      if (message.namespace === 'result') {
+        this._handleResponse(message.requestID, message.value);
+      }
+    }
+  }
+
+  _sendControlRequest(code) {
+    let token = code;
     if (token === '' && config.gpm.token) {
         token = config.gpm.token;
     }
 
-    var app_auth = ['twitch-gpm'];
+    const app_auth = ['twitch-gpm'];
     if (token !== '') {
         app_auth[1] = token;
     }
 
-    var control_request = {
-        namespace: 'connect',
-        method: 'connect',
-        arguments: app_auth
-    };
-
-    ws_client.send(JSON.stringify(control_request));
-}
-
-function promptAuthCode() {
-    return readline.question('Input 4-digit code from GPM: ');
-}
-
-// Handle music player events
-ws_client.on('message', function(data, flags) {
-    var message = JSON.parse(data);
-
-    if (message.namespace === 'result') {
-        handleResponse(message.requestID, message.value);
-    }
-    
-    else if (message.channel === 'connect') {
-        var code = '';
-        if (message.payload === 'CODE_REQUIRED') {
-            code = promptAuthCode();
-        }
-        else if (message.payload) {
-            config.gpm.token = message.payload;
-            console.log('Your token is ' + config.gpm.token);
-            console.log('Save this value to config.gpm.token');
-        }
-        sendControlRequest(code);
-    }
-    else if (message.channel === 'track') {
-        handleTrackChange(message.payload);
-    }
-});
-
-// Handle Twitch chat events
-tmi_client.on('chat', (channel, user, message, self) => {
-    if (message.slice(0,1) !== '!') return;
-
-    var message = message.slice(1);
-    var msg_tokens = message.split(' ');
-    if (msg_tokens.length === 0) return;
-
-    var command = msg_tokens[0].toLowerCase();
-    var arguments = msg_tokens.slice(1);
-    
-    var action = commands[command];
-    if (action) {
-        var handler = action.handler;
-        handler.call(this, channel, user, arguments);
-    }
-});
-
-// User requests a song. Send the text as search text.
-function requestSong(channel, user, args, addNext) {
-    var searchText = args.join(' ');
-    var request = createRequest(channel, user, 'search', addNext);
-    var data = {
-        namespace: 'search',
-        method: 'performSearch',
-        arguments: [searchText],
-        requestID: request.ID
-    };
-    ws_client.send(JSON.stringify(data));
-}
-
-// Create a request object to hold onto and later match up to a response
-function createRequest(channel, user, type, addNext) {
-    var request = {
-        ID: nextRequest,
-        type: type,
-        channel: channel,
-        user: user,
-        addNext: addNext
-    };
-    requests[nextRequest++] = request;
-    return request;
-}
-
-// Handle music player response events
-function handleResponse(requestID, returnValue) {
-    var request = requests[requestID];
-    if (!request) return;
-
-    delete requests[requestID];
-
-    switch(request.type) {
-    case 'search':
-        handleSearch(request);
-        break;
-
-    case 'searchResults':
-        handleSearchResults(request, returnValue);
-        break;
-    }
-}
-
-function handleSearch(request) {
-    var newRequest = createRequest(request.channel, request.user, 'searchResults', request.addNext);
-    var data = {
-        namespace: 'search',
-        method: 'getCurrentResults',
-        requestID: newRequest.ID
-    }
-
-    // Use a timeout to ensure that the search is done.
-    // We could query isSearching, but that complicates things quite a bit
-    setTimeout(function() {
-        ws_client.send(JSON.stringify(data));
-    }, 2000);
-}
-
-function handleSearchResults(request, results) {
-    var track;
-    // if we have a "best match" and it's a track, use it
-    if (results.bestMatch && results.bestMatch.type === 'track') {
-        track = results.bestMatch.value;
-    }
-    // Otherwise pick the first track we found
-    else {
-        track = results.tracks[0];
-    }
-
-    if (!track) {
-        if (request.channel && request.user) {
-            tmi_client.say(request.channel, request.user['display-name'] + ', failed to find a match.');
-        }
-        return;
-    }
-
-    // Report action to user
-    if (request.channel && request.user) {
-        tmi_client.say(request.channel, request.user['display-name'] + ', added ' + track.title + ' by ' + track.artist + '.');
-    }
-
-    // If we have tracks queued already, defer adding this one until later.
-    if (!request.addNext) {
-        addToQueue(track.title, track.artist);
-    }
-    if (queue.length === 1 || request.addNext) {
-        // Add track to queue
-        playNext(request, track);
-    }
-}
-
-function playNext(request, track) {
-    var newRequest = createRequest(request.channel, request.user, 'queue');
-    var data = {
-        namespace: 'search',
-        method: 'playTrackNext',
-        arguments: [track],
-        requestID: newRequest.ID
-    };
-    ws_client.send(JSON.stringify(data));
-}
-
-function addToQueue(title, artist) {
-    queue.push({
-        title: title,
-        artist: artist
+    this._sendRequest('connect', 'connect', app_auth).catch((error) => {
+      // A timeout here is perfectly normal, since a successful auth has no reply
+      if (error instanceof Error && error.message !== 'Timeout') {
+        console.log(error.stack);
+      }
     });
-    console.log('Queued: ' + title + ' by ' + artist);
-}
+  }
 
-function displayHelp(channel, user, args) {
-    var helpString = '';
-    for (command in commands) {
-        helpString += '!' + command + ' (' + commands[command].description + '), ';
-    }
-    helpString = helpString.slice(0, -2);
-    tmi_client.say(channel, 'Commands: ' + helpString);
-}
+  _promptAuthCode() {
+    return readline.question('Input 4-digit code from GPM: ');
+  }
 
-function handleTrackChange(data) {
-    // When the track changes, we should queue up the next requested song.
-    // To do that, we have to re-run the search and add the song.
-    if (queue.length === 0) {
-        // do nothing
-        return;
+  _handleResponse(ID, value) {
+    const request = this._requests[ID];
+    if (!request) {
+      return;
     }
 
-    var nextTrack = queue.shift();
+    request.response = value;
+  }
 
+  _sendRequest(namespace, method, args, options, timeout) {
+    if (!timeout || timeout < 0) timeout = 5000;
+
+    const request = {
+      ID: this._nextRequest,
+      namespace: namespace,
+      method: method,
+      arguments: args,
+      options: options,
+      response: null,
+      initiated: (new Date()).getTime()
+    };
+
+    return new Promise((resolve, reject) => {
+      this._requests[this._nextRequest++] = request;
+      const wsRequest = this._createRequest(request);
+      this._gpmClient.send(JSON.stringify(wsRequest));
+      const waitForResponse = setInterval(() => {
+        if ((new Date()).getTime() - request.initiated > timeout) {
+          clearInterval(waitForResponse);
+          reject(new Error('Timeout'));
+        }
+
+        if (request.response !== null) {
+          clearInterval(waitForResponse);
+          if (request.response instanceof Error) {
+            reject(request);
+          }
+          else {
+            resolve(request);
+          }
+        }
+      }, 100);
+    });
+  }
+
+  _createRequest(requestSource) {
+    return {
+      requestID: requestSource.ID,
+      namespace: requestSource.namespace,
+      method: requestSource.method,
+      arguments: requestSource.arguments
+    }
+  }
+
+  _addToQueue(track) {
+    this._queue.push({
+      title: track.title,
+      artist: track.artist
+    });
+    console.log('Queued: ' + track.title + ' by ' + track.artist);
+  }
+
+  _requestSong(channel, user, args) {
+    const searchText = args.join(' ');
+    this.findSong(searchText).then((track) => {
+      this._tmiClient.say(channel, user['display-name'] + ', added ' + track.title + ' by ' + track.artist + '.');
+      if (this._queue.length === 0) {
+        this.playNext('', track);
+      }
+      this._addToQueue(track);
+    }).catch((msg) => {
+      if (msg instanceof Error) {
+        this._tmiClient.say(channel, user['display-name'] + ', there was an error processing your request.');
+        console.log(msg.stack);
+      }
+      else {
+        this._tmiClient.say(channel, user['display-name'] + ', ' + msg + '.');
+      }
+    });
+  }
+
+  _handleTrackChange(data) {
+    if (this._queue.length === 0) {
+      // nothing to do!
+      return;
+    }
+
+    let nextTrack = this._queue[0];
     if (data.title.toLowerCase() === nextTrack.title.toLowerCase() &&
         data.artist.toLowerCase() === nextTrack.artist.toLowerCase()) {
-        // do nothing
-        nextTrack = queue.shift();
+      // currently playing is first on queue. remove it.
+      this._queue.shift();
     }
-    requestSong(null, null, [nextTrack.title, nextTrack.artist], true);
+
+    // if there's a song still on the queue, make it next up
+    if (this._queue[0]) {
+      nextTrack = this._queue[0];
+      this.playNext(nextTrack.title + ' ' + nextTrack.artist);
+    }
+  }
+
+  _displayHelp(channel, user, args) {
+      let helpString = '';
+      for (command in this.commands) {
+          helpString += '!' + command + ' (' + this.commands[command].description + '), ';
+      }
+      helpString = helpString.slice(0, -2);
+      this._tmiClient.say(channel, 'Commands: ' + helpString);
+  }
+
+  _displayNext(channel, user, args) {
+    const nextSong = this._queue[0];
+    if (nextSong) {
+      this._tmiClient.say(channel, 'Next song: ' + nextSong.title + ' by ' + nextSong.artist);
+    }
+    else {
+      this._tmiClient.say(channel, 'No songs are queued.');
+    }
+  }
+
+  // if we're already on a search page, use track to pass the track directly
+  playNext(searchTerm, track) {
+    if (searchTerm === '' && !track) return;
+
+    if (track) {
+      this._sendRequest('search', 'playTrackNext', [track]);
+    }
+    else {
+      this.findSong(searchTerm).then((foundTrack) => this._sendRequest('search', 'playTrackNext', [foundTrack]));
+    }
+  }
+
+  // return a promise that resolves when we have a track reference
+  findSong(searchTerm) {
+    return this._sendRequest('search', 'performSearch', [searchTerm]).then((request) =>
+      // Search doesn't return anything useful. We need to send a request for search results.
+      this._sendRequest('search', 'getCurrentResults', null).then((getResultsRq) => {
+        // Now we have useful results.
+        let track = null;
+        const results = getResultsRq.response;
+        // if we have a "best match" and it's a track, use it
+        if (results.bestMatch && results.bestMatch.type === 'track') {
+          track = results.bestMatch.value;
+        }
+        // Otherwise pick the first track we found
+        else {
+          track = results.tracks[0];
+        }
+
+        if (!track) {
+          return Promise.reject('failed to find a match');
+        }
+
+        return Promise.resolve(track);
+      })
+    ).then((result) => Promise.resolve(result)).catch((result) => Promise.reject(result));
+  }
 }
+
+const bot = new TwitchGPM();
