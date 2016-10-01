@@ -11,6 +11,7 @@ config = {};
 
 config.gpm = {};
 config.twitch = {};
+config.nowplaying = {};
 
 config.gpm.uri = 'ws://url:port'; // URI of your music player's websocket interface 
 config.gpm.token = 'token'; // Token granted to your app by GPMPD
@@ -18,6 +19,8 @@ config.gpm.token = 'token'; // Token granted to your app by GPMPD
 config.twitch.username = 'MyBot'; // Bot's Twitch username
 config.twitch.token = 'oauth:secrettoken'; // Your bot's twitch OAuth token
 config.twitch.channels = ['MyChannel']; // Channels to join
+
+config.nowplaying.output = '/path/to/output.txt'; // Bot will write the currently playing song to this file
 
 module.exports = config;
 ```
@@ -35,4 +38,4 @@ To get a Twitch OAuth token:
 * !help - Display commands
 * !song - Search for a song to play and queue it up
 * !next - Display the next song in the request queue
-
+* !playing - Display the song that is currently playing
