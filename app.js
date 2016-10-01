@@ -4,6 +4,7 @@ const tmi = require('tmi.js');
 const ws = require('ws');
 const readline = require('readline-sync');
 const Promise = require('bluebird');
+const fs = require('fs');
 const config = require('./config.js');
 
 Promise.longStackTraces();
@@ -33,6 +34,9 @@ class TwitchGPM {
     this._setupGPMHandlers();
     this._setupTMIHandlers();
 
+    this._currentSong = null;
+    this._playing = false;
+
     this._requests = [];
     this._nextRequest = 1;
   }
@@ -50,6 +54,10 @@ class TwitchGPM {
       'next': {
         description: 'Show next track in queue',
         handler: this._displayNext
+      },
+      'playing': {
+        description: 'Show the currently playing song',
+        handler: this._displayNowPlaying
       }
     };
   }
@@ -98,7 +106,6 @@ class TwitchGPM {
   _handleWSMessage(message) {
     switch(message.channel) {
     case 'connect':
-      console.log("Using _handleWSMessage");
       var code = '';
       if (message.payload === 'CODE_REQUIRED') {
         code = this._promptAuthCode();
@@ -106,7 +113,7 @@ class TwitchGPM {
       else if (message.payload) {
         config.gpm.token = message.payload;
         console.log('Your token is ' + config.gpm.token);
-        console.log('Save this value to config.gpm.token');
+        console.log('Save this value to config.gpm.token.');
       }
       this._sendControlRequest(code);
       break;
@@ -114,6 +121,9 @@ class TwitchGPM {
     case 'track':
       this._handleTrackChange(message.payload);
       break;
+
+    case 'playState':
+      this._handlePlayState(message.payload);
 
     default:
       if (message.namespace === 'result') {
@@ -210,13 +220,13 @@ class TwitchGPM {
       title: track.title,
       artist: track.artist
     });
-    console.log('Queued: ' + track.title + ' by ' + track.artist);
+    console.log('Queued: ' + this._songString(track));
   }
 
   _requestSong(channel, user, args) {
     const searchText = args.join(' ');
     this.findSong(searchText).then((track) => {
-      this._tmiClient.say(channel, user['display-name'] + ', added ' + track.title + ' by ' + track.artist + '.');
+      this._tmiClient.say(channel, user['display-name'] + ', added ' + this._songString(track) + '.');
       if (this._queue.length === 0) {
         this.playNext('', track);
       }
@@ -232,7 +242,19 @@ class TwitchGPM {
     });
   }
 
+  _handlePlayState(playing) {
+    this._playing = playing;
+    if (!playing) {
+      this._writeSong('');
+    }
+    else {
+      this._updateSong(this._currentSong);
+    }
+  }
+
   _handleTrackChange(data) {
+    this._updateSong(data);
+
     if (this._queue.length === 0) {
       // nothing to do!
       return;
@@ -254,6 +276,7 @@ class TwitchGPM {
 
   _displayHelp(channel, user, args) {
       let helpString = '';
+      let command = null;
       for (command in this.commands) {
           helpString += '!' + command + ' (' + this.commands[command].description + '), ';
       }
@@ -264,11 +287,49 @@ class TwitchGPM {
   _displayNext(channel, user, args) {
     const nextSong = this._queue[0];
     if (nextSong) {
-      this._tmiClient.say(channel, 'Next song: ' + nextSong.title + ' by ' + nextSong.artist);
+      this._tmiClient.say(channel, 'Next song: ' + this._songString(nextSong));
     }
     else {
       this._tmiClient.say(channel, 'No songs are queued.');
     }
+  }
+
+  _displayNowPlaying(channel, user, args) {
+    if (!this._currentSong || !this._playing) {
+      this._tmiClient.say(channel, 'No song currently playing');
+    }
+    else if (this._currentSong) {
+      this._tmiClient.say(channel, 'Now playing ' + this._songString(this._currentSong));
+    }
+  }
+
+  _updateSong(songData) {
+    this._currentSong = songData;
+    if (this._playing) {
+      const songText = this._songString(songData);
+      if (songText.length > 0) {
+        this._writeSong(songText);
+      }
+    }
+  }
+
+  _songString(songData) {
+    const title = songData.title;
+    const artist = songData.artist;
+
+    if (!title || !artist) return '';
+
+    return (title + ' by ' + artist);
+  }
+
+  _writeSong(text) {
+    if (!config.nowplaying || !config.nowplaying.output) return;
+
+    fs.writeFile(config.nowplaying.output, text, (error) => {
+      if (error) {
+        console.log('Failed to write current song to [' + config.nowplaying.output + ']: ' + error);
+      }
+    });
   }
 
   // if we're already on a search page, use track to pass the track directly
