@@ -2,6 +2,7 @@
 
 const song = {
     description: 'Play song',
+    help: 'Enter [!song <search term>] to search for and queue a song. Songs are taken from Google Play Music.',
     handler: requestSong
 }
 

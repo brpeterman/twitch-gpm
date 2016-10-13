@@ -2,6 +2,7 @@
 
 const next = {
   description: 'Show next track in queue',
+  help: 'Enter [!next] to display the next requested track in the queue.',
   handler: displayNext
 }
 

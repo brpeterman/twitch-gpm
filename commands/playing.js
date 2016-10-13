@@ -2,6 +2,7 @@
 
 const playing = {
     description: 'Show the currently playing song',
+    help: 'Enter [!playing] to display the currently playing song.',
     handler: displayNowPlaying
 }
 
