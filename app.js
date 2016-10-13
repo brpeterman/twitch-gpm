@@ -27,11 +27,12 @@ class TwitchGPM {
       channels: config.twitch.channels
     };
 
-    this._tmiClient = new tmiClient(this, config);
-    this._gpmClient = new gpmClient(this, config);
+    this.tmiClient = new tmiClient(this, config);
+    this.gpmClient = new gpmClient(this, config);
     this._wsServer = new wsServer(this, config);
 
     this._setupQueue();
+    this._registerCommands();
 
     this.currentSong = {};
     this.playing = false;
@@ -39,6 +40,23 @@ class TwitchGPM {
 
   _setupQueue() {
     this.queue = [];
+  }
+
+  _registerCommands() {
+    this.commands = [];
+
+    fs.readdir('./commands', (err, files) => {
+      if (err) {
+        console.log('Error loading commands: ' + err);
+        return;
+      }
+
+      for (let i in files) {
+        let fileName = files[i];
+        let commandName = fileName.split('.', 2)[0];
+        this.commands[commandName] = require('./commands/' + fileName);
+      }
+    })
   }
 
   addToQueue(track) {
@@ -89,11 +107,11 @@ class TwitchGPM {
   }
 
   connectTMI() {
-    this._tmiClient.connect();
+    this.tmiClient.connect();
   }
 
   disconnectTMI() {
-    this._tmiClient.disconnect();
+    this.tmiClient.disconnect();
   }
 
   raiseEvent(eventType, channel, user, args) {
@@ -105,16 +123,16 @@ class TwitchGPM {
     if (searchTerm === '' && !track) return;
 
     if (track) {
-      this._gpmClient.playNext(track);
+      this.gpmClient.playNext(track);
     }
     else {
-      this.findSong(searchTerm).then((foundTrack) => this._gpmClient.playNext(foundTrack));
+      this.findSong(searchTerm).then((foundTrack) => this.gpmClient.playNext(foundTrack));
     }
   }
 
   // return a promise that resolves when we have a track reference
   findSong(searchTerm) {
-    return this._gpmClient.findSong(searchTerm);
+    return this.gpmClient.findSong(searchTerm);
   }
 
   nowPlaying() {
@@ -128,7 +146,7 @@ class TwitchGPM {
   }
 
   getCommands() {
-    return this._tmiClient.commands;
+    return this.tmiClient.commands;
   }
 }
 
