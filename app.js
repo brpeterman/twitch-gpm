@@ -27,12 +27,13 @@ class TwitchGPM {
       channels: config.twitch.channels
     };
 
+    this._registerCommands();
+
     this.tmiClient = new tmiClient(this, config);
     this.gpmClient = new gpmClient(this, config);
     this._wsServer = new wsServer(this, config);
 
     this._setupQueue();
-    this._registerCommands();
 
     this.currentSong = {};
     this.playing = false;
@@ -45,18 +46,13 @@ class TwitchGPM {
   _registerCommands() {
     this.commands = [];
 
-    fs.readdir('./commands', (err, files) => {
-      if (err) {
-        console.log('Error loading commands: ' + err);
-        return;
-      }
+    let files = fs.readdirSync('./commands')
 
-      for (let i in files) {
-        let fileName = files[i];
-        let commandName = fileName.split('.', 2)[0];
-        this.commands[commandName] = require('./commands/' + fileName);
-      }
-    })
+    for (let i in files) {
+      let fileName = files[i];
+      let commandName = fileName.split('.', 2)[0];
+      this.commands[commandName] = require('./commands/' + fileName);
+    }
   }
 
   addToQueue(track) {
@@ -94,16 +90,6 @@ class TwitchGPM {
         console.log('Failed to write current song to [' + config.nowplaying.output + ']: ' + error);
       }
     });
-  }
-
-  _raiseEvent(event, channel, user, args) {
-    const eventData = {
-      event: event,
-      channel: channel,
-      user: user['display-name'],
-      arguments: args
-    }
-    this._wsServer.send(eventData);
   }
 
   connectTMI() {
@@ -146,7 +132,7 @@ class TwitchGPM {
   }
 
   getCommands() {
-    return this.tmiClient.commands;
+    return this.commands;
   }
 }
 
