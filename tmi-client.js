@@ -43,7 +43,7 @@ class TMIClient {
     const command = msg_tokens[0].toLowerCase();
     const args = msg_tokens.slice(1);
 
-    const action = this._bot.commands[command];
+    const action = this._bot.getActionForCommand(command);
     if (action) {
       this._bot.raiseEvent(command, channel, user, args);
       const handler = action.handler;

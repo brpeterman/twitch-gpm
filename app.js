@@ -40,27 +40,39 @@ class TwitchGPM {
   }
 
   _setupQueue() {
-    this.queue = [];
+    this._queue = [];
   }
 
   _registerCommands() {
-    this.commands = [];
+    this._commands = [];
 
     let files = fs.readdirSync('./commands')
 
     for (let i in files) {
       let fileName = files[i];
       let commandName = fileName.split('.', 2)[0];
-      this.commands[commandName] = require('./commands/' + fileName);
+      this._commands[commandName] = require('./commands/' + fileName);
     }
   }
 
+  getQueue() {
+    return this._queue;
+  }
+
   addToQueue(track) {
-    this.queue.push({
+    this._queue.push({
       title: track.title,
       artist: track.artist
     });
     console.log('Queued: ' + this.songString(track));
+  }
+
+  dequeue() {
+    return this._queue.shift();
+  }
+
+  nextInQueue() {
+    return this.bot._queue[0];
   }
 
   updateSong(songData) {
@@ -132,7 +144,11 @@ class TwitchGPM {
   }
 
   getCommands() {
-    return this.commands;
+    return this._commands;
+  }
+
+  getActionForCommand(command) {
+      return this._commands[command];
   }
 }
 

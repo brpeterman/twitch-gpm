@@ -155,21 +155,21 @@ class GPMClient {
   _handleTrackChange(data) {
     this._bot.updateSong(data);
 
-    if (this._bot.queue.length === 0) {
+    if (this._bot.nextInQueue() === null) {
       // nothing to do!
       return;
     }
 
-    let nextTrack = this._bot.queue[0];
+    let nextTrack = this._bot.nextInQueue();
     if (data.title.toLowerCase() === nextTrack.title.toLowerCase() &&
         data.artist.toLowerCase() === nextTrack.artist.toLowerCase()) {
       // currently playing is first on queue. remove it.
-      this._bot.queue.shift();
+      this._bot.dequeue();
     }
 
     // if there's a song still on the queue, make it next up
-    if (this._bot.queue[0]) {
-      nextTrack = this._bot.queue[0];
+    if (this._bot.nextInQueue()) {
+      nextTrack = this._bot.nextInQueue();
       this._bot.playNext(nextTrack.title + ' ' + nextTrack.artist);
     }
   }

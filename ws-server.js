@@ -39,7 +39,7 @@ class WSServer {
   _handleMessage(clientID, message) {
     switch(message.action) {
     case 'subscribe':
-      this._handleSubscribe(clientID, message.event)
+      this._handleSubscribe(clientID, message.event);
       break;
     case 'unsubscribe':
       this._handleUnsubscribe(clientID, message.event);
@@ -54,7 +54,7 @@ class WSServer {
   }
 
   _removeClient(clientID) {
-    this._purgeSubscriptions(clientID)
+    this._purgeSubscriptions(clientID);
     delete this._clients[clientID];
   }
 
@@ -89,7 +89,7 @@ class WSServer {
 
     const reply = {
       action: 'getQueue',
-      value: this._bot.queue
+      value: this._bot.getQueue()
     };
     ws.send(JSON.stringify(reply));
   }
