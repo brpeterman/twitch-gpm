@@ -53,7 +53,7 @@ To subscribe to a command notification, a client should send a message like this
 ```javascript
 {
   action: 'subscribe',
-  event: 'queue'
+  event: 'next'
 }
 ```
 
@@ -61,7 +61,7 @@ Now, whenever a user enters the `queue` command, the bot will send a message to 
 
 ```javascript
 {
-  event: 'queue',
+  event: 'next',
   channel: '#myChannel',
   user: 'myUsername',
 }
@@ -71,7 +71,7 @@ If you've subscribed to a command that takes arguments, the arguments will be in
 
 ```javascript
 {
-  event: 'song'
+  event: 'next'
   channel: '#myChannel',
   user: 'myUsername',
   arguments: [
@@ -87,7 +87,7 @@ To unsubscribe from notifications, just send an `unsubscribe` action:
 ```javascript
 {
   action: 'unsubscribe',
-  event: 'queue'
+  event: 'next'
 }
 ```
 
