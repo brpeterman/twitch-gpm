@@ -161,10 +161,12 @@ class GPMClient {
     }
 
     let nextTrack = this._bot.nextInQueue();
-    if (data.title.toLowerCase() === nextTrack.title.toLowerCase() &&
-        data.artist.toLowerCase() === nextTrack.artist.toLowerCase()) {
-      // currently playing is first on queue. remove it.
-      this._bot.dequeue();
+    if (nextTrack) {
+      if (data.title.toLowerCase() === nextTrack.title.toLowerCase() &&
+          data.artist.toLowerCase() === nextTrack.artist.toLowerCase()) {
+        // currently playing is first on queue. remove it.
+        this._bot.dequeue();
+      }
     }
 
     // if there's a song still on the queue, make it next up

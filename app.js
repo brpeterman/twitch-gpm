@@ -72,7 +72,7 @@ class TwitchGPM {
   }
 
   nextInQueue() {
-    return this.bot._queue[0];
+    return this._queue[0];
   }
 
   updateSong(songData) {
